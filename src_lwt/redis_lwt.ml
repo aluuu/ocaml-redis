@@ -1,9 +1,11 @@
 module IO = struct
   type 'a t = 'a Lwt.t
 
-  type fd = Lwt_unix.file_descr
-  type in_channel = Lwt_io.input_channel
-  type out_channel = Lwt_io.output_channel
+  type flow = {
+    flow: Conduit_lwt_unix.flow;
+    in_channel : Conduit_lwt_unix.ic;
+    out_channel : Conduit_lwt_unix.oc;
+  }
 
   type 'a stream = 'a Lwt_stream.t
   type stream_count = unit
@@ -16,34 +18,29 @@ module IO = struct
   let fail = Lwt.fail
   let run = Lwt_main.run
 
-  let connect host port =
-    let port = string_of_int port in
-    let addr_info =
-      let open Lwt_unix in
-      getaddrinfo host port [AI_FAMILY PF_INET] >>= function
-        | ai::_ -> return ai
-        | [] ->
-            getaddrinfo host port [AI_FAMILY PF_INET6] >>= function
-              | ai::_ -> return ai
-              | [] -> Lwt.fail_with "Could not resolve redis host!"
-    in
-    addr_info >>= fun addr_info ->
-    let fd = Lwt_unix.socket addr_info.Lwt_unix.ai_family Lwt_unix.SOCK_STREAM 0 in
-    let do_connect () =
-      Lwt_unix.connect fd addr_info.Lwt_unix.ai_addr >>= fun () ->
-      return fd
-    in
-    catch do_connect (fun exn -> Lwt_unix.close fd >>= fun () -> fail exn)
 
-  let close = Lwt_unix.close
+  let connect host port =
+    let uri = (Uri.make ~scheme:"redis" ~host ~port) () in
+
+    let service name =
+      let open Resolver in
+      return (Some {name=name; port=port; tls=false}) in
+    let rewrites = ["", Resolver_lwt_unix.system_resolver] in
+    let res = Resolver_lwt.init ~service ~rewrites () in
+
+    Resolver_lwt.resolve_uri ~uri res >>= fun endp ->
+    let ctx = Conduit_lwt_unix.default_ctx in
+    Conduit_lwt_unix.endp_to_client ~ctx endp >>= fun client ->
+    Conduit_lwt_unix.connect ~ctx client >>= fun (flow, ic, oc) ->
+    return {flow=flow; in_channel=ic; out_channel=oc}
+
+  let close flow = Lwt_io.close flow.in_channel
   let sleep = Lwt_unix.sleep
 
-  let in_channel_of_descr fd = Lwt_io.of_fd ~mode:Lwt_io.input fd
-  let out_channel_of_descr fd = Lwt_io.of_fd ~mode:Lwt_io.output fd
-  let input_char = Lwt_io.read_char
-  let really_input = Lwt_io.read_into_exactly
-  let output_string = Lwt_io.write
-  let flush = Lwt_io.flush
+  let input_char {in_channel} = Lwt_io.read_char in_channel
+  let really_input {in_channel} = Lwt_io.read_into_exactly in_channel
+  let output_string {out_channel} = Lwt_io.write out_channel
+  let flush {out_channel} = Lwt_io.flush out_channel
 
   let iter = Lwt_list.iter_p
   let iter_serial = Lwt_list.iter_s
