@@ -3,6 +3,7 @@ PKG lwt
 PKG lwt.unix
 PKG re.str
 PKG oUnit
+PKG conduit
 
 S src
 S test

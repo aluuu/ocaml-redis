@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 1b460393c5f071bd08b92631413b5bc8)
+# DO NOT EDIT (digest: c8b057153df9b6c039a16e5d336df13a)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -33,6 +33,8 @@ true: annot, bin_annot
 # Library redis_lwt
 "src_lwt/redis_lwt.cmxs": use_redis_lwt
 <src_lwt/*.ml{,i,y}>: package(bytes)
+<src_lwt/*.ml{,i,y}>: package(conduit.lwt)
+<src_lwt/*.ml{,i,y}>: package(conduit.lwt-unix)
 <src_lwt/*.ml{,i,y}>: package(lwt)
 <src_lwt/*.ml{,i,y}>: package(lwt.unix)
 <src_lwt/*.ml{,i,y}>: package(re.str)
@@ -40,6 +42,8 @@ true: annot, bin_annot
 <src_lwt/*.ml{,i,y}>: use_redis
 # Executable redis_examples
 <examples/examples.{native,byte}>: package(bytes)
+<examples/examples.{native,byte}>: package(conduit.lwt)
+<examples/examples.{native,byte}>: package(conduit.lwt-unix)
 <examples/examples.{native,byte}>: package(core)
 <examples/examples.{native,byte}>: package(lwt)
 <examples/examples.{native,byte}>: package(lwt.unix)
@@ -50,6 +54,8 @@ true: annot, bin_annot
 <examples/examples.{native,byte}>: use_redis_lwt
 <examples/examples.{native,byte}>: use_redis_sync
 <examples/*.ml{,i,y}>: package(bytes)
+<examples/*.ml{,i,y}>: package(conduit.lwt)
+<examples/*.ml{,i,y}>: package(conduit.lwt-unix)
 <examples/*.ml{,i,y}>: package(core)
 <examples/*.ml{,i,y}>: package(lwt)
 <examples/*.ml{,i,y}>: package(lwt.unix)
@@ -69,6 +75,8 @@ true: annot, bin_annot
 <test/*.ml{,i,y}>: use_redis_sync
 # Executable test_lwt
 <test/test_lwt.{native,byte}>: package(bytes)
+<test/test_lwt.{native,byte}>: package(conduit.lwt)
+<test/test_lwt.{native,byte}>: package(conduit.lwt-unix)
 <test/test_lwt.{native,byte}>: package(lwt)
 <test/test_lwt.{native,byte}>: package(lwt.unix)
 <test/test_lwt.{native,byte}>: package(oUnit)
@@ -77,6 +85,8 @@ true: annot, bin_annot
 <test/test_lwt.{native,byte}>: use_redis
 <test/test_lwt.{native,byte}>: use_redis_lwt
 <test/*.ml{,i,y}>: package(bytes)
+<test/*.ml{,i,y}>: package(conduit.lwt)
+<test/*.ml{,i,y}>: package(conduit.lwt-unix)
 <test/*.ml{,i,y}>: package(lwt)
 <test/*.ml{,i,y}>: package(lwt.unix)
 <test/*.ml{,i,y}>: package(oUnit)

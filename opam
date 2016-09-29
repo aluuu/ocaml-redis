@@ -29,6 +29,7 @@ depends: [
   "uuidm"
   "re"
   "lwt" {test}
+  "conduit"
   "ounit" {test}
 ]
 depopts: ["lwt"]

@@ -35,7 +35,7 @@ Library redis_lwt
   FindlibParent: redis
   Findlibname: lwt
   Modules: Redis_lwt
-  BuildDepends: redis, lwt.unix, lwt
+  BuildDepends: redis, lwt.unix, lwt, conduit.lwt, conduit.lwt-unix
 
 Flag examples
   Description: Build the examples
