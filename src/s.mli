@@ -1,15 +1,13 @@
 module type IO = sig
   type 'a t
 
-  type fd
-  type in_channel
-  type out_channel
+  type flow
 
   type 'a stream
   type stream_count
 
-  val connect : string -> int -> fd t
-  val close : fd -> unit t
+  val connect : string -> int -> flow t
+  val close : flow -> unit t
   val sleep : float -> unit t
 
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
@@ -20,12 +18,10 @@ module type IO = sig
   val fail : exn -> 'a t
   val run : 'a t -> 'a
 
-  val in_channel_of_descr : fd -> in_channel
-  val out_channel_of_descr : fd -> out_channel
-  val input_char : in_channel -> char t
-  val really_input : in_channel -> string -> int -> int -> unit t
-  val output_string : out_channel -> string -> unit t
-  val flush : out_channel -> unit t
+  val input_char : flow -> char t
+  val really_input : flow -> string -> int -> int -> unit t
+  val output_string : flow -> string -> unit t
+  val flush : flow -> unit t
 
   val iter : ('a -> unit t) -> 'a list -> unit t
   val iter_serial : ('a -> unit t) -> 'a list -> unit t
@@ -65,9 +61,7 @@ module type Client = sig
   ]
 
   type connection = private {
-    fd     : IO.fd;
-    in_ch  : IO.in_channel;
-    out_ch : IO.out_channel;
+    flow     : IO.flow;
     stream : reply list IO.stream;
   }
 

@@ -18,9 +18,7 @@ module Make(IO : S.IO) = struct
   ]
 
   type connection = {
-    fd     : IO.fd;
-    in_ch  : IO.in_channel;
-    out_ch : IO.out_channel;
+    flow     : IO.flow;
     stream : reply list IO.stream;
   }
 
@@ -159,8 +157,8 @@ module Make(IO : S.IO) = struct
           IO.fail (Error msg)
 
   let send_request connection command =
-    write connection.out_ch command >>= fun () ->
-    read_reply_exn connection.in_ch
+    write connection.flow command >>= fun () ->
+    read_reply_exn connection.flow
 
   let interleave list =
     let rec loop acc = function
@@ -318,15 +316,12 @@ module Make(IO : S.IO) = struct
 
   let connect spec =
     let {host=host; port=port} = spec in
-    IO.connect host port >>= fun fd ->
-    let in_ch = IO.in_channel_of_descr fd in
+    IO.connect host port >>= fun flow ->
     IO.return
-      { fd = fd;
-        in_ch = in_ch;
-        out_ch = IO.out_channel_of_descr fd;
+      { flow = flow;
         stream =
           let f _ =
-            read_reply_exn in_ch >>= fun resp ->
+            read_reply_exn flow >>= fun resp ->
             return_multibulk resp >>= fun b ->
             IO.return (Some b) in
           IO.stream_from f;
@@ -335,7 +330,7 @@ module Make(IO : S.IO) = struct
   let disconnect connection =
     (* both channels are bound to the same file descriptor so we only need
        to close one of them *)
-    IO.close connection.fd
+    IO.close connection.flow
 
   let with_connection spec f =
     connect spec >>= fun c ->
@@ -1004,22 +999,22 @@ module Make(IO : S.IO) = struct
   (* Subscribes the client to the specified channels. *)
   let subscribe connection channels =
     let command = "SUBSCRIBE" :: channels in
-    write connection.out_ch command >>= fun () -> IO.return ()
+    write connection.flow command >>= fun () -> IO.return ()
 
   (* Unsubscribes the client from the given channels, or from all of them if an empty list is given *)
   let unsubscribe connection channels =
     let command = "UNSUBSCRIBE" :: channels in
-    write connection.out_ch command
+    write connection.flow command
 
   (* Subscribes the client to the given patterns. *)
   let psubscribe connection patterns =
     let command = "PSUBSCRIBE" :: patterns in
-    write connection.out_ch command >>= fun () -> IO.return ()
+    write connection.flow command >>= fun () -> IO.return ()
 
   (* Unsubscribes the client from the given patterns. *)
   let punsubscribe connection patterns =
     let command = "PUNSUBSCRIBE" :: patterns in
-    write connection.out_ch command
+    write connection.flow command
 
   (** Sorted Set commands *)
 
