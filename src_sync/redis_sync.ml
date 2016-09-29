@@ -1,9 +1,11 @@
 module IO = struct
   type 'a t = 'a
 
-  type fd = Unix.file_descr
-  type in_channel = Pervasives.in_channel
-  type out_channel = Pervasives.out_channel
+  type flow = {
+    fd: Unix.file_descr;
+    in_channel: Pervasives.in_channel;
+    out_channel: Pervasives.out_channel
+  }
 
   type socket_domain = Unix.socket_domain
   type socket_type = Unix.socket_type
@@ -33,19 +35,20 @@ module IO = struct
     in
     let fd = Unix.socket addr_info.Unix.ai_family Unix.SOCK_STREAM 0 in
     try
-      Unix.connect fd addr_info.Unix.ai_addr; fd
+      Unix.connect fd addr_info.Unix.ai_addr;
+      let in_channel = Unix.in_channel_of_descr fd in
+      let out_channel = Unix.out_channel_of_descr fd in
+      { fd = fd; in_channel = in_channel; out_channel = out_channel }
     with
       exn -> Unix.close fd; raise exn
 
-  let close = Unix.close
+  let close flow = Unix.close flow.fd
   let sleep a = ignore (Unix.select [] [] [] a)
 
-  let in_channel_of_descr = Unix.in_channel_of_descr
-  let out_channel_of_descr = Unix.out_channel_of_descr
-  let input_char = Pervasives.input_char
-  let really_input = Pervasives.really_input
-  let output_string = output_string
-  let flush = Pervasives.flush
+  let input_char flow = Pervasives.input_char flow.in_channel
+  let really_input flow = Pervasives.really_input flow.in_channel
+  let output_string flow = output_string flow.out_channel
+  let flush flow = Pervasives.flush flow.out_channel
 
   let iter = List.iter
   let iter_serial = List.iter
