@@ -29,7 +29,7 @@ depends: [
   "uuidm"
   "re"
   "lwt" {test}
-  "conduit"
+  "conduit" {>= "0.10.0"}
   "ounit" {test}
 ]
 depopts: ["lwt"]
