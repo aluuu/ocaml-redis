@@ -18,6 +18,12 @@
  (libraries redis_test redis_lwt))
 
 (executable
+ (name test_lwt_eio)
+ (modules test_lwt_eio)
+ (flags :standard -safe-string)
+ (libraries redis_test redis_lwt eio_main lwt_eio))
+
+(executable
  (name reg_78)
  (modules reg_78)
  (modes native)
@@ -41,3 +47,10 @@
  (locks ../test)
  (package redis-sync)
  (action (run ./test_sync.exe -ci true -runner sequential)))
+
+
+(alias
+ (name runtest)
+ (locks ../test)
+ (package redis-lwt)
+ (action (run ./test_lwt_eio.exe -ci true -runner sequential)))
