@@ -1,9 +1,7 @@
 module IO = struct
   type 'a t = 'a Lwt.t
-
-  type fd = Lwt_unix.file_descr
-  type in_channel = Lwt_io.input_channel
-  type out_channel = Lwt_io.output_channel
+  type connection =
+    (Lwt_unix.file_descr *  Lwt_io.input_channel * Lwt_io.output_channel)
 
   type 'a stream = 'a Lwt_stream.t
   type stream_count = unit
@@ -16,7 +14,8 @@ module IO = struct
   let return = Lwt.return
   let fail = Lwt.fail
   let run = Lwt_main.run
-  let atomic = Lwt_io.atomic
+  let atomic f (fd, in_ch, out_ch) =
+    Lwt_io.atomic (fun ch -> f (fd, ch, out_ch)) in_ch
 
   let connect host port =
     let port = string_of_int port in
@@ -33,19 +32,19 @@ module IO = struct
     let fd = Lwt_unix.socket addr_info.Lwt_unix.ai_family Lwt_unix.SOCK_STREAM 0 in
     let do_connect () =
       Lwt_unix.connect fd addr_info.Lwt_unix.ai_addr >>= fun () ->
-      return fd
+      return (fd,
+              Lwt_io.of_fd ~mode:Lwt_io.input fd,
+              Lwt_io.of_fd ~mode:Lwt_io.output fd)
     in
     catch do_connect (fun exn -> Lwt_unix.close fd >>= fun () -> fail exn)
 
-  let close = Lwt_unix.close
+  let close (fd, _, _) = Lwt_unix.close fd
   let sleep = Lwt_unix.sleep
 
-  let in_channel_of_descr fd = Lwt_io.of_fd ~mode:Lwt_io.input fd
-  let out_channel_of_descr fd = Lwt_io.of_fd ~mode:Lwt_io.output fd
-  let input_char = Lwt_io.read_char
-  let really_input = Lwt_io.read_into_exactly
-  let output_string = Lwt_io.write
-  let flush = Lwt_io.flush
+  let input_char (_, in_ch, _) = Lwt_io.read_char in_ch
+  let really_input (_, in_ch, _) = Lwt_io.read_into_exactly in_ch
+  let output_string (_, _, out_ch) = Lwt_io.write out_ch
+  let flush (_, _, out_ch) = Lwt_io.flush out_ch
 
   let iter = Lwt_list.iter_p
   let iter_serial = Lwt_list.iter_s

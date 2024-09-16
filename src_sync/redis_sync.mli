@@ -2,7 +2,8 @@
    Blocking client for Redis
 *)
 
-module IO : Redis.S.IO with type 'a t = 'a and type 'a stream = 'a Stream.t
+module IO : Redis.S.IO with type 'a t = 'a and
+                            type 'a stream = 'a Stream.t
 
 module Client : Redis.S.Client with module IO = IO
 

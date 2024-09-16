@@ -70,11 +70,9 @@ module Common(IO: S.IO) = struct
     mutable connections : connection ConnectionSpecMap.t;
   }
   and connection = {
-    fd      : IO.fd;
-    in_ch   : IO.in_channel;
-    out_ch  : IO.out_channel;
-    stream  : reply list IO.stream;
-    cluster : cluster_connections;
+      connection      : IO.connection;
+      stream  : reply list IO.stream;
+      cluster : cluster_connections;
   }
 
   let empty_cluster = {
@@ -113,37 +111,37 @@ module Common(IO: S.IO) = struct
       | Inclusive bound -> String.concat "" [""; string_of_float bound]
   end
 
-  let write out_ch args =
+  let write connection args =
     let num_args = List.length args in
-    IO.output_string out_ch (Printf.sprintf "*%d" num_args) >>= fun () ->
-    IO.output_string out_ch "\r\n" >>= fun () ->
+    IO.output_string connection (Printf.sprintf "*%d" num_args) >>= fun () ->
+    IO.output_string connection "\r\n" >>= fun () ->
     IO.iter_serial
       (fun arg ->
          let length = String.length arg in
-         IO.output_string out_ch (Printf.sprintf "$%d" length) >>= fun () ->
-         IO.output_string out_ch "\r\n" >>= fun () ->
-         IO.output_string out_ch arg >>= fun () ->
-         IO.output_string out_ch "\r\n"
+         IO.output_string connection (Printf.sprintf "$%d" length) >>= fun () ->
+         IO.output_string connection "\r\n" >>= fun () ->
+         IO.output_string connection arg >>= fun () ->
+         IO.output_string connection "\r\n"
       )
       args >>= fun () ->
-    IO.flush out_ch
+    IO.flush connection
 
-  let read_fixed_line length in_ch =
+  let read_fixed_line length io_connection =
     let line = Bytes.create length in
-    IO.really_input in_ch line 0 length >>= fun () ->
-    IO.input_char in_ch >>= fun c1 ->
-    IO.input_char in_ch >>= fun c2 ->
+    IO.really_input io_connection line 0 length >>= fun () ->
+    IO.input_char io_connection >>= fun c1 ->
+    IO.input_char io_connection >>= fun c2 ->
     let line = Bytes.to_string line in
     match c1, c2 with
     | '\r', '\n' -> IO.return line
     | _          -> IO.fail (Unrecognized ("Expected terminator", line))
 
-  let read_line in_ch =
+  let read_line connection =
     let buf = Buffer.create 32 in
     let rec loop () =
-      IO.input_char in_ch >>= function
+      IO.input_char connection >>= function
       | '\r' ->
-        IO.input_char in_ch >>= (function
+        IO.input_char connection >>= (function
             | '\n' ->
               IO.return (Buffer.contents buf)
             | c ->
@@ -185,54 +183,54 @@ module Common(IO: S.IO) = struct
       IO.return (`Error s)
 
   (* this expects the initial ':' to have already been consumed *)
-  let read_integer in_ch =
-    read_line in_ch >>= fun line ->
+  let read_integer connection =
+    read_line connection >>= fun line ->
     IO.return
       (try `Int (int_of_string line)
        with _ -> `Int64 (Int64.of_string line))
 
   (* this expects the initial '$' to have already been consumed *)
-  let read_bulk in_ch =
-    read_line in_ch >>= fun line ->
+  let read_bulk io_connection =
+    read_line io_connection >>= fun line ->
     match int_of_string line with
     | -1 -> IO.return (`Bulk None)
     | n when n >= 0 ->
-      read_fixed_line n in_ch >>= fun data ->
+      read_fixed_line n io_connection >>= fun data ->
       IO.return (`Bulk (Some data))
     | n ->
       IO.fail (Unrecognized ("Invalid bulk length", string_of_int n))
 
   (* this expects the initial '*' to have already been consumed *)
-  let rec read_multibulk in_ch =
+  let rec read_multibulk io_connection =
     let rec loop acc n =
       if n <= 0 then
         IO.return (`Multibulk (List.rev acc))
       else
-        read_reply in_ch >>= fun data -> loop (data :: acc) (n - 1)
+        read_reply io_connection >>= fun data -> loop (data :: acc) (n - 1)
     in
-    read_line in_ch >>= fun line ->
+    read_line io_connection >>= fun line ->
     let num_bulk = int_of_string line in
     loop [] num_bulk
 
-  and read_reply in_ch =
-    IO.atomic (fun in_ch ->
-        IO.input_char in_ch >>= function
+  and read_reply io_connection =
+    IO.atomic (fun io_connection ->
+        IO.input_char io_connection >>= function
         | '+' ->
-          read_line in_ch >>= fun s -> IO.return (`Status s)
+          read_line io_connection >>= fun s -> IO.return (`Status s)
         | '-' ->
-          read_line in_ch >>= classify_error
+          read_line io_connection >>= classify_error
         | ':' ->
-          read_integer in_ch
+          read_integer io_connection
         | '$' ->
-          read_bulk in_ch
+          read_bulk io_connection
         | '*' ->
-          read_multibulk in_ch
+          read_multibulk io_connection
         | c ->
           IO.fail (Unrecognized ("Unexpected char in reply", Char.escaped c)))
-      in_ch
+      io_connection
 
-  let read_reply_exn in_ch =
-    read_reply in_ch >>= function
+  let read_reply_exn io_connection =
+    read_reply io_connection >>= function
     | `Status _
     | `Int _
     | `Int64 _
@@ -350,16 +348,13 @@ module Common(IO: S.IO) = struct
 
   let connect spec =
     let {host=host; port=port} = spec in
-    IO.connect host port >>= fun fd ->
-    let in_ch = IO.in_channel_of_descr fd in
+    IO.connect host port >>= fun io_connection ->
     IO.return
-      { fd = fd;
-        in_ch = in_ch;
-        out_ch = IO.out_channel_of_descr fd;
+      { connection = io_connection;
         cluster = empty_cluster;
         stream =
           let f _ =
-            read_reply_exn in_ch >>= fun resp ->
+            read_reply_exn io_connection >>= fun resp ->
             return_multibulk resp >>= fun b ->
             IO.return (Some b) in
           IO.stream_from f;
@@ -368,7 +363,7 @@ module Common(IO: S.IO) = struct
   let disconnect connection =
     (* both channels are bound to the same file descriptor so we only need
        to close one of them *)
-    IO.close connection.fd
+    IO.close connection.connection
 
   let with_connection spec f =
     connect spec >>= fun c ->
@@ -382,8 +377,8 @@ module Common(IO: S.IO) = struct
          IO.fail e)
 
   let send_request connection command =
-    write connection.out_ch command >>= fun () ->
-    read_reply_exn connection.in_ch >>= function
+    write connection.connection command >>= fun () ->
+    read_reply_exn connection.connection >>= function
     | `Status _
     | `Int _
     | `Int64 _
@@ -446,7 +441,7 @@ module Common(IO: S.IO) = struct
       | Command of connection * command
 
     let send_request connection command =
-      write connection.out_ch command
+      write connection.connection command
       >>= fun () ->
       IO.return connection
   end
@@ -494,11 +489,9 @@ module type Mode = sig
     mutable connections : connection ConnectionSpecMap.t;
   }
   and connection = {
-    fd      : IO.fd;
-    in_ch   : IO.in_channel;
-    out_ch  : IO.out_channel;
-    stream  : reply list IO.stream;
-    cluster : cluster_connections;
+      connection : IO.connection;
+      stream  : reply list IO.stream;
+      cluster : cluster_connections;
   }
 
   exception Redis_error of string
@@ -528,7 +521,7 @@ module type Mode = sig
     val to_string : t -> string
   end
 
-  val write : IO.out_channel -> string list -> unit IO.t
+  val write : IO.connection -> string list -> unit IO.t
   val interleave : ('a * 'a) list -> 'a list
   val return_bulk : reply -> string option IO.t
   val return_no_nil_bulk : reply -> string IO.t
@@ -560,7 +553,7 @@ module type Mode = sig
   val stream : connection -> reply list IO.stream
 
   val read_reply_exn :
-    IO.in_channel ->
+    IO.connection ->
     [> `Ask of redirection
     | `Bulk of string option
     | `Int of int
@@ -651,8 +644,8 @@ module ClusterMode(IO : S.IO) = struct
     let slot = get_slot key in
     get_connection connection slot
 
-  let read_reply_exn in_ch =
-    read_reply in_ch >>= function
+  let read_reply_exn connection =
+    read_reply connection >>= function
     | `Moved _
     | `Ask _
     | `Status _
@@ -666,8 +659,8 @@ module ClusterMode(IO : S.IO) = struct
 
   let send_request' main_connection command =
     let rec loop connection =
-      write connection.out_ch command >>= fun () ->
-      read_reply_exn connection.in_ch >>= function
+      write connection.connection command >>= fun () ->
+      read_reply_exn connection.connection >>= function
       | `Ask {slot=_; host; port} ->
         connect {host; port} >>= fun connection_moved ->
         let res = loop connection_moved in
@@ -750,7 +743,7 @@ module ClusterMode(IO : S.IO) = struct
           | None -> connection
           | Some connection -> connection
       in
-      write connection.out_ch command
+      write connection.connection command
       >>= fun () ->
       IO.return connection
   end
@@ -1448,22 +1441,22 @@ module MakeClient(Mode: Mode) = struct
   (* Subscribes the client to the specified channels. *)
   let subscribe connection channels =
     let command = "SUBSCRIBE" :: channels in
-    write connection.out_ch command >>= fun () -> IO.return ()
+    write connection.connection command >>= fun () -> IO.return ()
 
   (* Unsubscribes the client from the given channels, or from all of them if an empty list is given *)
   let unsubscribe connection channels =
     let command = "UNSUBSCRIBE" :: channels in
-    write connection.out_ch command
+    write connection.connection command
 
   (* Subscribes the client to the given patterns. *)
   let psubscribe connection patterns =
     let command = "PSUBSCRIBE" :: patterns in
-    write connection.out_ch command >>= fun () -> IO.return ()
+    write connection.connection command >>= fun () -> IO.return ()
 
   (* Unsubscribes the client from the given patterns. *)
   let punsubscribe connection patterns =
     let command = "PUNSUBSCRIBE" :: patterns in
-    write connection.out_ch command
+    write connection.connection command
 
   (** Sorted Set commands *)
 
@@ -1918,19 +1911,19 @@ module MakeClient(Mode: Mode) = struct
       | Command (connection, command) ->
         (* Printf.eprintf "ocaml-redis: next_action COMMAND %s\n%!" (String.concat " " command); *)
         stop := !stop && false;
-        read_reply_exn connection.in_ch >>=
+        read_reply_exn connection.connection >>=
         reply main_connection command
       | Ask (connection, command) ->
         (* Printf.eprintf "ocaml-redis: next_action ASK %s\n%!" (String.concat " " command); *)
         stop := !stop && false;
-        read_reply_exn connection.in_ch >>=
+        read_reply_exn connection.connection >>=
         reply main_connection command >>= fun action ->
         disconnect connection >>= fun () ->
         IO.return action
       | Moved (connection, command) ->
         (* Printf.eprintf "ocaml-redis: next_action MOVED %s\n%!" (String.concat " " command); *)
         stop := !stop && false;
-        read_reply_exn connection.in_ch >>=
+        read_reply_exn connection.connection >>=
         reply main_connection command
 
     let read_loop connection commands =

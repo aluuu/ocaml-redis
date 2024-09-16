@@ -1,9 +1,6 @@
 module IO = struct
   type 'a t = 'a
-
-  type fd = Unix.file_descr
-  type nonrec in_channel = in_channel
-  type nonrec out_channel = out_channel
+  type connection = (Unix.file_descr * in_channel * out_channel)
 
   type 'a stream = 'a Stream.t
   type stream_count = int
@@ -31,19 +28,18 @@ module IO = struct
     in
     let fd = Unix.socket addr_info.Unix.ai_family Unix.SOCK_STREAM 0 in
     try
-      Unix.connect fd addr_info.Unix.ai_addr; fd
+      Unix.connect fd addr_info.Unix.ai_addr;
+      (fd, Unix.in_channel_of_descr fd, Unix.out_channel_of_descr fd)
     with
       exn -> Unix.close fd; raise exn
 
-  let close = Unix.close
+  let close (fd, _, _) = Unix.close fd
   let sleep a = ignore (Unix.select [] [] [] a)
 
-  let in_channel_of_descr = Unix.in_channel_of_descr
-  let out_channel_of_descr = Unix.out_channel_of_descr
-  let input_char = input_char
-  let really_input = really_input
-  let output_string = output_string
-  let flush = flush
+  let input_char (_, in_ch, _) = input_char in_ch
+  let really_input (_, in_ch, _) = really_input in_ch
+  let output_string (_, _, out_ch) = output_string out_ch
+  let flush (_, _, out_ch) = flush out_ch
 
   let iter = List.iter
   let iter_serial = List.iter
